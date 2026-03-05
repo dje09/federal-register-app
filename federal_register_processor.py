@@ -61,16 +61,7 @@ class VolumeMapper:
         """
         self.excel_path = excel_path
         self.volume_data = None
-        self.load_excel()
-    
-    def load_excel(self):
-        """Load and parse Excel file with volume mappings"""
-        try:
-            self.volume_data = pd.read_excel(self.excel_path, sheet_name='DOV')
-            logger.info(f"Successfully loaded Excel file: {self.excel_path}")
-        except Exception as e:
-            logger.error(f"Error loading Excel file: {str(e)}")
-            raise
+        # Note: Excel loading disabled for now - implement when needed
     
     def get_volume(self, title: str, section: str) -> Optional[str]:
         """
@@ -83,65 +74,8 @@ class VolumeMapper:
         Returns:
             Volume number as string or None if not found
         """
-        try:
-            if self.volume_data is None:
-                return None
-            
-            # Convert title to integer for comparison
-            title_num = int(title)
-            
-            # Filter by title
-            title_rows = self.volume_data[self.volume_data['Title'] == title_num]
-            
-            if title_rows.empty:
-                logger.warning(f"No volume found for Title {title}")
-                return None
-            
-            # Parse section to find matching volume
-            for _, row in title_rows.iterrows():
-                sections_range = str(row['Sections'])
-                if self._section_in_range(section, sections_range):
-                    return str(row['Volume'])
-            
-            logger.warning(f"No volume found for Title {title}, Section {section}")
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error getting volume: {str(e)}")
-            return None
-    
-    def _section_in_range(self, section: str, range_str: str) -> bool:
-        """
-        Check if section falls within a range
-        
-        Args:
-            section: Section number to check
-            range_str: Range string from Excel (e.g., "1-199", "All")
-            
-        Returns:
-            True if section is in range, False otherwise
-        """
-        try:
-            if range_str.lower() == 'all':
-                return True
-            
-            # Extract numeric part from section
-            section_num = int(re.findall(r'\d+', str(section))[0])
-            
-            # Parse range
-            if '-' in range_str:
-                parts = range_str.split('-')
-                start = int(re.findall(r'\d+', parts[0])[0])
-                end_match = re.findall(r'\d+', parts[1])
-                if end_match:
-                    end = int(end_match[0])
-                    return start <= section_num <= end
-            
-            return False
-            
-        except Exception as e:
-            logger.debug(f"Error parsing section range: {str(e)}")
-            return False
+        # Placeholder - implement Excel lookup when needed
+        return None
 
 
 class PDFProcessor:
@@ -544,25 +478,22 @@ class FederalRegisterApp:
         
         @self.app.route('/export', methods=['POST'])
         def export_data():
-            """Export processed documents to Excel"""
+            """Export processed documents to JSON (Excel export disabled for now)"""
             try:
                 if not self.processed_documents:
                     return jsonify({'error': 'No documents to export'}), 400
                 
-                # Convert to DataFrame
+                # Convert to JSON
                 data = [asdict(doc) for doc in self.processed_documents]
-                df = pd.DataFrame(data)
-                
-                # Convert errors list to string
-                df['errors'] = df['errors'].apply(lambda x: '; '.join(x) if x else '')
                 
                 # Generate filename
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-                filename = f'fr_documents_{timestamp}.xlsx'
+                filename = f'fr_documents_{timestamp}.json'
                 filepath = os.path.join(self.app.config['OUTPUT_FOLDER'], filename)
                 
-                # Export to Excel
-                df.to_excel(filepath, index=False, engine='openpyxl')
+                # Export to JSON
+                with open(filepath, 'w') as f:
+                    json.dump(data, f, indent=2)
                 
                 return send_file(filepath, as_attachment=True, download_name=filename)
                 
@@ -575,13 +506,9 @@ class FederalRegisterApp:
             """Clear all processed documents"""
             self.processed_documents.clear()
             return jsonify({'success': True, 'message': 'Documents cleared'})
-    
-    def run(self, debug=False, host='0.0.0.0', port=5000):
-        """Run the Flask application"""
-        self.app.run(debug=debug, host=host, port=port)
 
 
-# HTML Template (save as templates/index.html)
+# HTML Template
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html lang="en">
@@ -915,7 +842,7 @@ HTML_TEMPLATE = '''
         <div id="documents-tab" class="tab-content">
             <h2>Processed Documents</h2>
             <div style="margin-bottom: 20px;">
-                <button class="btn btn-success" onclick="exportDocuments()">📥 Export to Excel</button>
+                <button class="btn btn-success" onclick="exportDocuments()">📥 Export to JSON</button>
                 <button class="btn btn-danger" onclick="clearDocuments()">🗑️ Clear All</button>
                 <button class="btn btn-secondary" onclick="refreshDocuments()">🔄 Refresh</button>
             </div>
@@ -1207,7 +1134,7 @@ HTML_TEMPLATE = '''
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `fr_documents_${new Date().getTime()}.xlsx`;
+                    a.download = `fr_documents_${new Date().getTime()}.json`;
                     document.body.appendChild(a);
                     a.click();
                     window.URL.revokeObjectURL(url);
@@ -1243,38 +1170,38 @@ HTML_TEMPLATE = '''
 '''
 
 
-# Main execution
+# Configuration (OUTSIDE if block - at module level)
+EXCEL_PATH = 'List of Volumes.xlsx'
+UPLOAD_FOLDER = 'uploads'
+OUTPUT_FOLDER = 'output'
+
+# Create templates folder and save HTML (OUTSIDE if block)
+templates_dir = Path('templates')
+templates_dir.mkdir(exist_ok=True)
+
+with open(templates_dir / 'index.html', 'w', encoding='utf-8') as f:
+    f.write(HTML_TEMPLATE)
+
+# Create the app instance (OUTSIDE if block - at module level for Gunicorn)
+app_instance = FederalRegisterApp(
+    excel_path=EXCEL_PATH,
+    upload_folder=UPLOAD_FOLDER,
+    output_folder=OUTPUT_FOLDER
+)
+
+# Expose the Flask app for Gunicorn
+app = app_instance.app
+
+
+# This runs only when executing the script directly (not when Gunicorn imports it)
 if __name__ == '__main__':
-    # Configuration
-    EXCEL_PATH = 'List of Volumes.xlsx'  # Path to your Excel file
-    UPLOAD_FOLDER = 'uploads'
-    OUTPUT_FOLDER = 'output'
-    
-    # Create templates folder and save HTML
-    templates_dir = Path('templates')
-    templates_dir.mkdir(exist_ok=True)
-    
-    with open(templates_dir / 'index.html', 'w', encoding='utf-8') as f:
-        f.write(HTML_TEMPLATE)
-    
-    # Initialize and run application
     print("Starting Federal Register Document Processor...")
     print(f"Excel file: {EXCEL_PATH}")
     print(f"Upload folder: {UPLOAD_FOLDER}")
     print(f"Output folder: {OUTPUT_FOLDER}")
-    
-    app = FederalRegisterApp(
-        excel_path=EXCEL_PATH,
-        upload_folder=UPLOAD_FOLDER,
-        output_folder=OUTPUT_FOLDER
-    )
-    
     print("\n" + "="*60)
     print("Application ready!")
     print("Open your browser and navigate to: http://localhost:5000")
     print("="*60 + "\n")
     
-
-    import os
-app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
-
+    app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
