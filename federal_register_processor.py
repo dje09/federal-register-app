@@ -9,7 +9,6 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-import pandas as pd
 from flask import Flask, render_template, request, jsonify, send_file
 from werkzeug.utils import secure_filename
 import pdfplumber
@@ -1278,3 +1277,4 @@ if __name__ == '__main__':
 
     import os
 app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+
